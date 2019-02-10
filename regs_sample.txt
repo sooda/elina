@@ -1,0 +1,34 @@
+mc_boot_0: ReadOnly
+mc_intr: ReadWrite 2
+mc_intr_en_set: ReadWrite 2
+mc_intr_en_clear: ReadWrite 2
+mc_enable: ReadWrite
+
+bus_intr_0: ReadWrite
+bus_bar1_block: ReadWrite
+
+fifo_intr_0: ReadWrite
+fifo_intr_en_0: ReadWrite
+fifo_runlist_base: ReadWrite
+fifo_runlist: ReadWrite
+fifo_eng_runlist: ReadOnly
+
+timer_pri_timeout_save_0: ReadWrite
+timer_pri_timeout_save_1: ReadWrite
+
+top_device_info: ReadOnly 64
+
+pbdma_intr_0: ReadWrite
+pbdma_intr_en_0: ReadWrite
+pbdma_timeout: ReadWrite
+
+fb_mmu_ctrl: ReadWrite
+fb_mmu_invalidate_pdb: ReadWrite
+fb_mmu_invalidate: ReadWrite
+
+pri_ringmaster_command: ReadWrite
+pri_ringmaster_intr_status0: ReadWrite
+pri_ringmaster_intr_status1: ReadWrite
+
+ccsr_channel_inst: ReadWrite
+ccsr_channel: ReadWrite
