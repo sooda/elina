@@ -8,16 +8,16 @@ from collections import namedtuple
 # note: foo_v(foo_f(x)) == x. Many of these are redundant. Every spec is read though to be sure.
 
 # registers
-FieldBits = namedtuple("FieldBits", "field")
-FieldValue = namedtuple("FieldValue", "constant")
-Field = namedtuple("Field", "shift size")
-FieldArray = namedtuple("FieldArray", "shift stride size")
-Register = namedtuple("Register", "address")
-RegisterArray = namedtuple("Register", "base stride")
+FieldBits = namedtuple("FieldBits", "name field")
+FieldValue = namedtuple("FieldValue", "name constant")
+Field = namedtuple("Field", "name shift size")
+FieldArray = namedtuple("FieldArray", "name shift stride size")
+Register = namedtuple("Register", "name address")
+RegisterArray = namedtuple("Register", "name address stride")
 
 # "struct" descriptions in RAM
-RamBoffset = namedtuple("RamBoffset", "byteoff")
-RamWoffset = namedtuple("RamWoffset", "wordoff")
+RamBoffset = namedtuple("RamBoffset", "name byteoff")
+RamWoffset = namedtuple("RamWoffset", "name wordoff")
 
 class Registers(object):
     def __init__(self):
@@ -71,38 +71,38 @@ class Registers(object):
         # foo_r(void)
         # 0x00000042U
         (addr,) = ret.groups()
-        return Register(address=int(addr, 16))
+        return Register(name=name, address=int(addr, 16))
 
     def parse_reg_array(self, name, ret):
         # foo_r(u32 i)
         # 0x00000042U + i*4U
         (base, stride) = ret.groups()
-        return RegisterArray(base=int(base, 16), stride=int(stride))
+        return RegisterArray(name=name, address=int(base, 16), stride=int(stride))
 
     def parse_boffset(self, name, ret):
         # foo_o(void)
         # 0x00000042U
         (off,) = ret.groups()
-        return RamBoffset(byteoff=int(off, 16))
+        return RamBoffset(name=name, byteoff=int(off, 16))
 
     def parse_woffset(self, name, ret):
         # foo_w(void)
         # 0x42U
         (off,) = ret.groups()
-        return RamWoffset(wordoff=int(off))
+        return RamWoffset(name=name, wordoff=int(off))
 
     def parse_size(self, name, ret):
         # foo_s(void)
         # 42U
         (size,) = ret.groups()
-        return Field(shift=None, size=int(size))
+        return Field(name=name, shift=None, size=int(size))
 
     def parse_field_bits(self, name, ret):
         # foo_f(void)
         # 0x42U
         # (IMO would make sense to pad to 8 long though as it's a field shifted in)
         (value,) = ret.groups()
-        return FieldBits(field=int(value, 16))
+        return FieldBits(name=name, field=int(value, 16))
 
     def parse_val_construct(self, name, ret):
         # foo_f(u32 v)
@@ -110,7 +110,7 @@ class Registers(object):
         (mask, shift) = ret.groups()
         mask = int(mask, 16)
         assert (mask & (mask + 1)) == 0
-        return Field(shift=int(shift), size=mask.bit_length())
+        return Field(name=name, shift=int(shift), size=mask.bit_length())
 
     def parse_val_arr_construct(self, name, ret):
         # foo_f(u32 v, u32 i)
@@ -119,7 +119,7 @@ class Registers(object):
         mask = int(mask, 16)
         assert (mask & (mask + 1)) == 0
         # (size probably equals stride if no gaps in between)
-        return FieldArray(shift=int(shift), stride=int(stride), size=mask.bit_length())
+        return FieldArray(name=name, shift=int(shift), stride=int(stride), size=mask.bit_length())
 
     def parse_mask(self, name, ret):
         # foo_m(void)
@@ -127,7 +127,7 @@ class Registers(object):
         (mask, shift) = ret.groups()
         mask = int(mask, 16)
         assert (mask & (mask + 1)) == 0
-        return Field(shift=int(shift), size=mask.bit_length())
+        return Field(name=name, shift=int(shift), size=mask.bit_length())
 
     def parse_mask_arr(self, name, ret):
         # foo_m(u32 i)
@@ -135,14 +135,14 @@ class Registers(object):
         (mask, shift, stride) = ret.groups()
         mask = int(mask, 16)
         assert (mask & (mask + 1)) == 0
-        return FieldArray(shift=int(shift), stride=int(stride), size=mask.bit_length())
+        return FieldArray(name=name, shift=int(shift), stride=int(stride), size=mask.bit_length())
 
     def parse_field_value(self, name, ret):
         # foo_v(void)
         # 0x00000042U
         # (IMO would make sense to not be padded to 8 long as it's a number, not shifted in)
         (value,) = ret.groups()
-        return FieldValue(constant=int(value, 16))
+        return FieldValue(name=name, constant=int(value, 16))
 
     def parse_val_extract(self, name, ret):
         # foo_v(u32 r)
@@ -150,7 +150,7 @@ class Registers(object):
         (shift, mask) = ret.groups()
         mask = int(mask, 16)
         assert (mask & (mask + 1)) == 0
-        return Field(shift=int(shift), size=mask.bit_length())
+        return Field(name=name, shift=int(shift), size=mask.bit_length())
 
     def parse_val_arr_extract(self, name, ret):
         # foo_v(u32 r, u32 i)
@@ -159,7 +159,7 @@ class Registers(object):
         mask = int(mask, 16)
         assert (mask & (mask + 1)) == 0
         # (size probably equals stride if no gaps in between)
-        return FieldArray(shift=int(shift), stride=int(stride), size=mask.bit_length())
+        return FieldArray(name=name, shift=int(shift), stride=int(stride), size=mask.bit_length())
 
 def main():
     # see https://nv-tegra.nvidia.com/gitweb/?p=linux-nvgpu.git
