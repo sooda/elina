@@ -4,6 +4,7 @@ from elina import Registers
 from sys import argv
 from glob import glob
 from collections import namedtuple
+from sys import stderr
 
 Properties = namedtuple("Properties", "access_type repeat")
 
@@ -118,11 +119,25 @@ def print_regs(regs, properties):
             print(line)
         print("}")
 
-def print_bitfields(regs):
+def print_bitfields(regs, r):
     print("register_bitfields! [")
     print("    u32,")
     for reg in regs:
         print("    %s [" % reg.name.upper())
+        fields = r.fieldmap.get(reg.name, [])
+        fields.sort(key=lambda f: -f.shift)
+        for field in fields:
+            name = field.name[len(reg.name) + 1:].upper()
+            try:
+                stride = field.stride
+                stderr.write("warning: don't know how to deal with these yet %s\n" % str(field))
+            except AttributeError:
+                print("        %-19s OFFSET(%d) NUMBITS(%d) []," % (
+                    name, field.shift, field.size))
+        if len(fields) == 0:
+            # placeholder
+            print("        %-19s OFFSET(%d) NUMBITS(%d) []," % (
+                "VALUE", 0, 32))
         print("    ],")
     print("];")
 
@@ -154,7 +169,7 @@ def main():
     # sometimes like "reg_name: ReadWrite 2" for two indexed regs
     properties = dict(reg_query)
 
-    print_bitfields(regs)
+    print_bitfields(regs, r)
     print_regs(regs, properties)
 
 if __name__ == "__main__":

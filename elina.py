@@ -4,6 +4,7 @@ from sys import argv
 from glob import glob
 import re
 from collections import namedtuple
+from sys import stderr
 
 # note: foo_v(foo_f(x)) == x. Many of these are redundant. Every spec is read though to be sure.
 
@@ -18,6 +19,9 @@ RegisterArray = namedtuple("Register", "name address stride")
 # "struct" descriptions in RAM
 RamBoffset = namedtuple("RamBoffset", "name byteoff")
 RamWoffset = namedtuple("RamWoffset", "name wordoff")
+
+def is_single_bit(x):
+    return x & (x - 1) == 0
 
 class Registers(object):
     def __init__(self):
@@ -56,6 +60,9 @@ class Registers(object):
                 self.parse_val_arr_extract),
         }
         self.registers = {}
+        self.ramregs = {}
+        self.fields = {}
+        self.fieldmap = {}
 
     def get_register(self, name):
         return self.registers[name]
@@ -64,15 +71,70 @@ class Registers(object):
         #print(header_path)
         contents = open(header_path).read()
 
+        new_fields = []
         for (name, kind, args, ret) in self.func_pat.findall(contents):
             full_kind = "%s %s" % (kind, args)
             # note: not all possible combinations of kind and args exist
             (regex, func) = self.parsers[full_kind]
             parsed = func(name, regex.match(ret))
             #print("    <%s> <%s> <%s> <%s>" % (name,full_kind,ret,parsed))
+            # XXX: maybe this should be done in the parser funcs already?
             if kind == "r":
                 assert name not in self.registers
                 self.registers[name] = parsed
+            elif kind == "o" or kind == "w":
+                assert name not in self.ramregs
+                self.ramregs[name] = parsed
+            elif kind != "s" and type(parsed) is Field or type(parsed) is FieldArray:
+                if name in self.fields:
+                    f = self.fields[name]
+                    assert type(f) == type(parsed)
+                    assert parsed.shift == f.shift
+                    assert parsed.size == f.size
+                    if type(parsed) is FieldArray:
+                        assert parsed.stride == f.stride
+                else:
+                    new_fields.append(name)
+                self.fields[name] = parsed
+            elif type(parsed) is FieldBits:
+                # These should ideally have a master field containing the bits,
+                # like an enum. That doesn't seem to always be the case though,
+                # so we'll do this with slightly less structure. If this is a
+                # lone bit, this is likely useful in bitfield specs. False
+                # positives may occur.
+                assert name not in self.fields
+                if parsed.field != 0 and is_single_bit(parsed.field):
+                    # spawn a fake field because this doesn't have a shift natively
+                    new_fields.append(name)
+                    # note: lsb is shifted by 0, so subtract one
+                    fake = Field(name=parsed.name, shift=parsed.field.bit_length() - 1, size=1)
+                    self.fields[name] = fake
+
+        # collect register/fields mapping for some likely pairs - except that
+        # this isn't reliable, sometimes there are regs foo and foo_bar and the
+        # foo_bar_zing field could go to either one, both happen in the input
+        for fname in new_fields:
+            field = self.fields[fname]
+            if False:
+                # find the shortest reg that this can start with, not sure if
+                # that's ok but the longest reg is not always correct
+                regname = None
+                nextname = fname
+                while "_" in nextname:
+                    if nextname in self.registers or nextname in self.ramregs:
+                        # found one, store it
+                        regname = nextname
+                    nextname = nextname.rsplit("_", 1)[0]
+            else:
+                # find the longest reg that this can start with, not sure etc.
+                regname = fname
+                field = self.fields[fname]
+                while "_" in regname and regname not in self.registers and regname not in self.ramregs:
+                    regname = regname.rsplit("_", 1)[0]
+            if regname not in self.registers and regname not in self.ramregs:
+                stderr.write("warning: no register for %s\n" % str(field))
+            else:
+                self.fieldmap.setdefault(regname, []).append(field)
 
     def parse_reg(self, name, ret):
         # foo_r(void)
@@ -116,7 +178,7 @@ class Registers(object):
         # (v & 0x1fU) << 42U
         (mask, shift) = ret.groups()
         mask = int(mask, 16)
-        assert (mask & (mask + 1)) == 0
+        assert is_single_bit(mask + 1)
         return Field(name=name, shift=int(shift), size=mask.bit_length())
 
     def parse_val_arr_construct(self, name, ret):
@@ -124,7 +186,7 @@ class Registers(object):
         # (v & 0x1fU) << (42U + i*1337U)
         (mask, shift, stride) = ret.groups()
         mask = int(mask, 16)
-        assert (mask & (mask + 1)) == 0
+        assert is_single_bit(mask + 1)
         # (size probably equals stride if no gaps in between)
         return FieldArray(name=name, shift=int(shift), stride=int(stride), size=mask.bit_length())
 
@@ -133,7 +195,7 @@ class Registers(object):
         # (0x1fU) << 42U
         (mask, shift) = ret.groups()
         mask = int(mask, 16)
-        assert (mask & (mask + 1)) == 0
+        assert is_single_bit(mask + 1)
         return Field(name=name, shift=int(shift), size=mask.bit_length())
 
     def parse_mask_arr(self, name, ret):
@@ -141,7 +203,7 @@ class Registers(object):
         # (0x1fU) << (42U + i*1337U)
         (mask, shift, stride) = ret.groups()
         mask = int(mask, 16)
-        assert (mask & (mask + 1)) == 0
+        assert is_single_bit(mask + 1)
         return FieldArray(name=name, shift=int(shift), stride=int(stride), size=mask.bit_length())
 
     def parse_field_value(self, name, ret):
@@ -156,7 +218,7 @@ class Registers(object):
         # (r >> 42U) & 0x1fU
         (shift, mask) = ret.groups()
         mask = int(mask, 16)
-        assert (mask & (mask + 1)) == 0
+        assert is_single_bit(mask + 1)
         return Field(name=name, shift=int(shift), size=mask.bit_length())
 
     def parse_val_arr_extract(self, name, ret):
@@ -164,7 +226,7 @@ class Registers(object):
         # (r >> (42U + i*1337U)) & 0x1fU
         (shift, stride, mask) = ret.groups()
         mask = int(mask, 16)
-        assert (mask & (mask + 1)) == 0
+        assert is_single_bit(mask + 1)
         # (size probably equals stride if no gaps in between)
         return FieldArray(name=name, shift=int(shift), stride=int(stride), size=mask.bit_length())
 
