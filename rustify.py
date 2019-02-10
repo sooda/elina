@@ -126,8 +126,10 @@ def print_bitfields(regs, r):
         print("    %s [" % reg.name.upper())
         fields = r.fieldmap.get(reg.name, [])
         fields.sort(key=lambda f: -f.shift)
+        strip = reg.name + "_"
         for field in fields:
-            name = field.name[len(reg.name) + 1:].upper()
+            assert field.name.startswith(strip)
+            name = field.name[len(strip):].upper()
             try:
                 stride = field.stride
                 stderr.write("warning: don't know how to deal with these yet %s\n" % str(field))

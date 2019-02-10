@@ -71,7 +71,7 @@ class Registers(object):
         #print(header_path)
         contents = open(header_path).read()
 
-        new_fields = []
+        last_reg = None
         for (name, kind, args, ret) in self.func_pat.findall(contents):
             full_kind = "%s %s" % (kind, args)
             # note: not all possible combinations of kind and args exist
@@ -82,9 +82,11 @@ class Registers(object):
             if kind == "r":
                 assert name not in self.registers
                 self.registers[name] = parsed
+                last_reg = parsed
             elif kind == "o" or kind == "w":
                 assert name not in self.ramregs
                 self.ramregs[name] = parsed
+                last_reg = parsed
             elif kind != "s" and type(parsed) is Field or type(parsed) is FieldArray:
                 if name in self.fields:
                     f = self.fields[name]
@@ -94,7 +96,10 @@ class Registers(object):
                     if type(parsed) is FieldArray:
                         assert parsed.stride == f.stride
                 else:
-                    new_fields.append(name)
+                    if name.startswith(last_reg.name + "_"):
+                        self.fieldmap.setdefault(last_reg.name, []).append(parsed)
+                    else:
+                        stderr.write("warn: %s does not have a parent register\n" % str(parsed))
                 self.fields[name] = parsed
             elif type(parsed) is FieldBits:
                 # These should ideally have a master field containing the bits,
@@ -105,36 +110,16 @@ class Registers(object):
                 assert name not in self.fields
                 if parsed.field != 0 and is_single_bit(parsed.field):
                     # spawn a fake field because this doesn't have a shift natively
-                    new_fields.append(name)
                     # note: lsb is shifted by 0, so subtract one
                     fake = Field(name=parsed.name, shift=parsed.field.bit_length() - 1, size=1)
+                    if name in self.fields:
+                        sys.stderr.write("warn!! %s\n" % name)
+                    else:
+                        if name.startswith(last_reg.name + "_"):
+                            self.fieldmap.setdefault(last_reg.name, []).append(fake)
+                        else:
+                            stderr.write("warn: %s does not have a parent register\n" % str(parsed))
                     self.fields[name] = fake
-
-        # collect register/fields mapping for some likely pairs - except that
-        # this isn't reliable, sometimes there are regs foo and foo_bar and the
-        # foo_bar_zing field could go to either one, both happen in the input
-        for fname in new_fields:
-            field = self.fields[fname]
-            if False:
-                # find the shortest reg that this can start with, not sure if
-                # that's ok but the longest reg is not always correct
-                regname = None
-                nextname = fname
-                while "_" in nextname:
-                    if nextname in self.registers or nextname in self.ramregs:
-                        # found one, store it
-                        regname = nextname
-                    nextname = nextname.rsplit("_", 1)[0]
-            else:
-                # find the longest reg that this can start with, not sure etc.
-                regname = fname
-                field = self.fields[fname]
-                while "_" in regname and regname not in self.registers and regname not in self.ramregs:
-                    regname = regname.rsplit("_", 1)[0]
-            if regname not in self.registers and regname not in self.ramregs:
-                stderr.write("warning: no register for %s\n" % str(field))
-            else:
-                self.fieldmap.setdefault(regname, []).append(field)
 
     def parse_reg(self, name, ret):
         # foo_r(void)
