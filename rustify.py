@@ -14,28 +14,28 @@ def regstride(r):
     except AttributeError:
         return 4
 
-def print_reg(r, properties):
+def print_reg(r, properties, current_struct):
     # stride can be other than 4 - in that case this is a part of a properly sized struct
     if regstride(r) != 4:
         repeat = 1
     else:
         repeat = properties.repeat
     if repeat > 1:
-        print("    %s: [%s<u32, %s::Register>; %d]," % (
+        current_struct.append("    %s: [%s<u32, %s::Register>; %d]," % (
             r.name, properties.access_type, r.name.upper(), repeat))
     else:
-        print("    %s: %s<u32, %s::Register>," % (
+        current_struct.append("    %s: %s<u32, %s::Register>," % (
             r.name, properties.access_type, r.name.upper()))
 
 # note: input is a consecutive list
 # FIXME: works with our own special reg spec, not fully tested yet for corner cases
-def flush_regs(run, properties):
+def flush_regs(run, properties, current_struct, structs):
     linear_single_regs = all([properties[reg.name].repeat == 1 for reg in run])
     single_array = len(run) == 1 and regstride(run[0]) == 4
     if linear_single_regs or single_array:
         # simple enough
         for reg in run:
-            print_reg(reg, properties[reg.name])
+            print_reg(reg, properties[reg.name], current_struct)
     else:
         struct_stride = len(run) * 4
         stride_ok = all([regstride(reg) == struct_stride for reg in run])
@@ -45,15 +45,52 @@ def flush_regs(run, properties):
             # HACK - probably should be indexed by section name or something
             name = run[0].name.split("_")[0]
 
-            # FIXME: collect to list of structs, then print when done iterating
-            print("    %s: [%s; %d]," % (name, name.capitalize(), size))
-            print("#[repr(C)]")
-            print("struct %s {" % name.capitalize())
+            current_struct.append("    %s: [%s; %d]," % (name, name.capitalize(), size))
+
+            new_struct = []
             for reg in run:
-                print_reg(reg, properties[reg.name])
-            print("}")
+                print_reg(reg, properties[reg.name], new_struct)
+            structs.append((name.capitalize(), new_struct))
         else:
             raise RuntimeError("don't know how to handle these yet %s" % run)
+
+def collect_struct(regs, properties, structname, structs):
+    current_struct = []
+
+    section_gap_count = 1 # implicit gap in front of the first reg
+    current_section_name = regs[0].name.split("_")[0]
+    # gap reference is the previous mentioned reg addr, i.e., the first one in
+    # this list
+    current_run = [regs[0]]
+
+    for (prev, curr) in zip(regs, regs[1:]):
+        section_name = curr.name.split("_")[0]
+        delta = curr.address - prev.address
+        assert delta >= 4
+        assert delta % 4 == 0
+        if delta > 4 or section_name != current_section_name:
+            # must output this run now
+            flush_regs(current_run, properties, current_struct, structs)
+
+            if section_name != current_section_name:
+                # another section begins, so reset naming
+                current_section_name = section_name
+                section_gap_count = 0
+
+            if delta > 4:
+                # non-consecutive sequence (technically we might use the last
+                # reg of one section and the first of another, with no gap in
+                # between)
+                regs_count = sum([properties[r.name].repeat for r in current_run])
+                current_struct.append("    _gap_%s%d: [u8; 0x%08x - (0x%08x + %d*4)]," % (
+                    current_section_name, section_gap_count,
+                    curr.address, current_run[0].address, regs_count))
+            current_run = []
+            # new numbers for next gap
+            section_gap_count += 1
+        current_run.append(curr)
+    flush_regs(current_run, properties, current_struct, structs)
+    structs.append((structname, current_struct))
 
 def print_regs(regs, properties):
     """
@@ -71,43 +108,15 @@ def print_regs(regs, properties):
         foo: [Foo; 512],
     }
     """
-    print("#[repr(C)]")
-    print("struct Registers {")
 
-    section_gap_count = 1 # implicit gap in front of the first reg
-    current_section_name = regs[0].name.split("_")[0]
-    # gap reference is the previous mentioned reg addr, i.e., the first one in
-    # this list
-    current_run = [regs[0]]
-
-    for (prev, curr) in zip(regs, regs[1:]):
-        section_name = curr.name.split("_")[0]
-        delta = curr.address - prev.address
-        assert delta >= 4
-        assert delta % 4 == 0
-        if delta > 4 or section_name != current_section_name:
-            # must output this run now
-            flush_regs(current_run, properties)
-
-            if section_name != current_section_name:
-                # another section begins, so reset naming
-                current_section_name = section_name
-                section_gap_count = 0
-
-            if delta > 4:
-                # non-consecutive sequence (technically we might use the last
-                # reg of one section and the first of another, with no gap in
-                # between)
-                regs_count = sum([properties[r.name].repeat for r in current_run])
-                print("    _gap_%s%d: [u8; 0x%08x - (0x%08x + %d*4)]," % (
-                    current_section_name, section_gap_count,
-                    curr.address, current_run[0].address, regs_count))
-            current_run = []
-            # new numbers for next gap
-            section_gap_count += 1
-        current_run.append(curr)
-    flush_regs(current_run, properties)
-    print("}")
+    structs = []
+    collect_struct(regs, properties, "Registers", structs)
+    for (name, contents) in structs:
+        print("#[repr(C)]")
+        print("struct %s {" % name)
+        for line in contents:
+            print(line)
+        print("}")
 
 def parse_prop(props):
     ps = props.split(" ")
