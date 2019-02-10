@@ -118,6 +118,14 @@ def print_regs(regs, properties):
             print(line)
         print("}")
 
+def print_bitfields(regs):
+    print("register_bitfields! [")
+    print("    u32,")
+    for reg in regs:
+        print("    %s [" % reg.name.upper())
+        print("    ],")
+    print("];")
+
 def parse_prop(props):
     ps = props.split(" ")
     try:
@@ -146,6 +154,7 @@ def main():
     # sometimes like "reg_name: ReadWrite 2" for two indexed regs
     properties = dict(reg_query)
 
+    print_bitfields(regs)
     print_regs(regs, properties)
 
 if __name__ == "__main__":
