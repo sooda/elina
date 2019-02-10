@@ -30,5 +30,5 @@ pri_ringmaster_command: ReadWrite
 pri_ringmaster_intr_status0: ReadWrite
 pri_ringmaster_intr_status1: ReadWrite
 
-ccsr_channel_inst: ReadWrite
-ccsr_channel: ReadWrite
+ccsr_channel_inst: ReadWrite 512
+ccsr_channel: ReadWrite 512
