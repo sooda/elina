@@ -55,9 +55,13 @@ class Registers(object):
             "v u32 r, u32 i": (re.compile(r"^\(r \>\> \((\d+)U \+ i\*(\d+)U\)\) & 0x([0-9a-f]+)U$"),
                 self.parse_val_arr_extract),
         }
+        self.registers = {}
+
+    def get_register(self, name):
+        return self.registers[name]
 
     def read_header(self, header_path):
-        print(header_path)
+        #print(header_path)
         contents = open(header_path).read()
 
         for (name, kind, args, ret) in self.func_pat.findall(contents):
@@ -65,7 +69,10 @@ class Registers(object):
             # note: not all possible combinations of kind and args exist
             (regex, func) = self.parsers[full_kind]
             parsed = func(name, regex.match(ret))
-            print("    <%s> <%s> <%s> <%s>" % (name,full_kind,ret,parsed))
+            #print("    <%s> <%s> <%s> <%s>" % (name,full_kind,ret,parsed))
+            if kind == "r":
+                assert name not in self.registers
+                self.registers[name] = parsed
 
     def parse_reg(self, name, ret):
         # foo_r(void)
